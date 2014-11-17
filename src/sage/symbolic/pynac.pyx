@@ -676,11 +676,25 @@ cdef public stdstring* py_latex_fderivative(unsigned id, object params,
         if textbook_style_deriv_choice:
             from sage.misc.latex import latex 
             if(len(params)>1):
-                op = ''.join(['\\frac{\partial^',str(len(params)),'}{\partial '])
+                op = ''.join(['\\dfrac{\partial^',str(len(params)),'}{\partial '])
             else: 
-                op = '\\frac{\partial}{\partial '
+                op = '\\dfrac{\partial}{\partial '
 
-            ostr = ''.join([op, '\partial '.join([''.join([latex(args[int(x)]), '^{', str(params.count(int(x)) if  params.count(int(x)) > 1 else ""), '}']) for x in list(set(params))]), '}'])
+            cmpos = [None]*len(args)
+
+            for x in params:
+                s = str(args[int(x)])
+                # check if variable is composed of other variables 
+                if "*" in s or "/" in s or "+" in s or "-" in s or "^" in s:
+                    cmpos[int(x)] = True
+                else:
+                    pass  
+
+            ostr = ''.join([op, '\partial '.join([''.join(['\\left(' if cmpos[int(x)] else '', latex(args[int(x)]), '\\right)^{' if cmpos[int(x)] else '^{', str(params.count(int(x)) if params.count(int(x)) > 1 else ""), '}']) for x in list(set(params))]), '}'])
+
+#            ostr = ''.join([op, '\partial '.join([''.join([latex(args[int(x)]), '^{', str(params.count(int(x)) if  params.count(int(x)) > 1 else ""), '}']) for x in list(set(params))]), '}'])
+
+
 
 
             bra = False
@@ -1507,7 +1521,7 @@ cdef public object py_zeta(object x) except +:
         sage: py_zeta(CC.0)
         0.00330022368532410 - 0.418155449141322*I
         sage: py_zeta(CDF(5))
-        1.03692775514
+        1.03692775514337
         sage: py_zeta(RealField(100)(5))
         1.0369277551433699263313654865
     """

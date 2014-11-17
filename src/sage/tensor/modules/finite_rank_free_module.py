@@ -39,10 +39,6 @@ and not to
 TODO:
 
 - implement submodules
-- implement free module homomorphisms (at the moment, only two specific kinds
-  of homomorphisms are implemented: endomorphisms, cf. :class:`~sage.tensor.modules.free_module_tensor_spec.FreeModuleEndomorphism`,
-  and linear forms, cf. 
-  :class:`~sage.tensor.modules.free_module_alt_form.FreeModuleLinForm`)
 - create a FreeModules category (cf. the *TODO* statement in the documentation 
   of :class:`~sage.categories.modules.Modules`: *Implement a FreeModules(R) 
   category, when so prompted by a concrete use case*)
@@ -408,6 +404,8 @@ class FiniteRankFreeModule(UniqueRepresentation, Parent):
         if not hasattr(self, '_zero_element'):
             self._zero_element = self._element_constructor_(name='zero', 
                                                             latex_name='0')
+        # Identity endomorphism:
+        self._identity_morphism = None # not defined yet
 
         
     #### Methods required for any Parent 
@@ -485,6 +483,35 @@ class FiniteRankFreeModule(UniqueRepresentation, Parent):
         description += "over the " + str(self._ring)
         return description
     
+    def _Hom_(self, other, category=None):
+        r"""
+        Construct the set of homomorphisms self --> other. 
+        
+        INPUT: 
+        
+        - ``other`` -- another free module of finite rank over the same ring
+          as ``self``
+          
+        - ``category`` -- (default: None) not used here (to ensure 
+          compatibility with generic hook ``_Hom_``)
+           
+        OUTPUT:
+        
+        - the hom-set Hom(M,N), where M is ``self`` and N is ``other``
+        
+        EXAMPLES:: 
+        
+            sage: M = FiniteRankFreeModule(ZZ, 3, name='M')
+            sage: N = FiniteRankFreeModule(ZZ, 2, name='N')
+            sage: H = M._Hom_(N) ; H
+            Set of Morphisms from rank-3 free module M over the Integer Ring to rank-2 free module N over the Integer Ring in Category of modules over Integer Ring
+            sage: H = Hom(M,N) ; H  # indirect doctest
+            Set of Morphisms from rank-3 free module M over the Integer Ring to rank-2 free module N over the Integer Ring in Category of modules over Integer Ring
+        
+        """
+        from free_module_homset import FreeModuleHomset
+        return FreeModuleHomset(self, other)
+        
     def tensor_module(self, k, l):
         r"""
         Return the free module of all tensors of type (k,l) defined on 
@@ -920,7 +947,16 @@ class FiniteRankFreeModule(UniqueRepresentation, Parent):
 
     def endomorphism(self, name=None, latex_name=None):
         r"""
-        Construct an endomorphism on the free module. 
+        Construct an endomorphism on the free module, 
+        as a tensor of type (1,1). 
+
+        .. NOTE::
+        
+            This method differs from :meth:`endomorphism_map` is that it 
+            returns a tensor of (1,1), while :meth:`endomorphism_map`
+            returns an instance of Sage's :class:`~sage.categories.map.Map`.
+            Note that there are coercions between these two types.  
+
         
         INPUT:
     
@@ -1353,7 +1389,7 @@ class FiniteRankFreeModule(UniqueRepresentation, Parent):
         
             sage: M = FiniteRankFreeModule(ZZ, 2, name='M', start_index=1)
             sage: M.default_basis()
-            No default basis has been defined on the rank-2 free module M over the Integer Ring
+            No default basis has been defined on the rank-2 free module M over the Integer Ring.
 
         The first defined basis becomes the default one::
         
@@ -1368,7 +1404,7 @@ class FiniteRankFreeModule(UniqueRepresentation, Parent):
 
         """
         if self._def_basis is None:
-            print "No default basis has been defined on the " + str(self)
+            print "No default basis has been defined on the " + str(self) + "."
         return self._def_basis
         
     def set_default_basis(self, basis):
@@ -1574,3 +1610,200 @@ class FiniteRankFreeModule(UniqueRepresentation, Parent):
         if compute_inverse:
             self._basis_changes[(basis2, basis1)] = change_of_basis.inverse()
  
+    def hom(self, codomain, matrix_rep, bases=None, name=None, 
+            latex_name=None):
+        r"""
+        Homomorphism from ``self`` to a free module. 
+            
+        Define a module homomorphism
+        
+        .. MATH::
+    
+            \phi:\ M \longrightarrow N, 
+            
+        where `M` is ``self`` and  `N` is a free module of finite rank 
+        over the same ring `R` as ``self``.  
+
+        .. NOTE::
+        
+            This method is a redefinition of 
+            :meth:`sage.structure.parent.Parent.hom` because the latter assumes
+            that ``self`` has some privileged generators, while an instance of
+            :class:`FiniteRankFreeModule` has no privileged basis. 
+        
+        INPUT:
+        
+        - ``codomain`` -- the target module `N`
+        - ``matrix_rep`` -- matrix of size rank(N)*rank(M) representing the 
+          homomorphism with respect to the pair of bases defined by ``bases``; 
+          this entry can actually be any material from which a matrix of 
+          elements of `R` can be constructed; the *columns* of
+          ``matrix_rep`` must be the components w.r.t. ``basis_N`` of 
+          the images of the elements of ``basis_M``.
+        - ``bases`` -- (default: None) pair ``(basis_M, basis_N)`` defining the 
+          matrix representation, ``basis_M`` being a basis of ``self`` and
+          ``basis_N`` a basis of module `N` ; if None the pair formed by the 
+          default bases of each module is assumed. 
+        - ``name`` -- (string; default: None) name given to the homomorphism
+        - ``latex_name`` -- (string; default: None) LaTeX symbol to denote the 
+          homomorphism; if None, ``name`` will be used. 
+        
+        OUTPUT:
+        
+        - the homomorphism `\phi: M \rightarrow N` corresponding to the given
+          specifications, as an instance of 
+          :class:`~sage.tensor.modules.free_module_morphism.FiniteRankFreeModuleMorphism`
+          
+        EXAMPLES:
+        
+        Homomorphism between two free modules over `\ZZ`::
+        
+            sage: M = FiniteRankFreeModule(ZZ, 3, name='M')
+            sage: N = FiniteRankFreeModule(ZZ, 2, name='N')
+            sage: e = M.basis('e')
+            sage: f = N.basis('f')
+            sage: phi = M.hom(N, [[-1,2,0], [5,1,2]]) ; phi
+            Generic morphism:
+              From: rank-3 free module M over the Integer Ring
+              To:   rank-2 free module N over the Integer Ring
+              
+        Homomorphism defined by a matrix w.r.t. bases that are not the
+        default ones::
+    
+            sage: ep = M.basis('ep', latex_symbol=r"e'")
+            sage: fp = N.basis('fp', latex_symbol=r"f'")
+            sage: phi = M.hom(N, [[3,2,1], [1,2,3]], bases=(ep, fp)) ; phi
+            Generic morphism:
+              From: rank-3 free module M over the Integer Ring
+              To:   rank-2 free module N over the Integer Ring
+    
+        Call with all arguments specified::
+        
+            sage: phi = M.hom(N, [[3,2,1], [1,2,3]], bases=(ep, fp), name='phi', latex_name=r'\phi')
+        
+        The parent::
+        
+            sage: phi.parent() is Hom(M,N)
+            True
+        
+        See class 
+        :class:`~sage.tensor.modules.free_module_morphism.FiniteRankFreeModuleMorphism`
+        for more documentation. 
+        
+        """
+        from sage.categories.homset import Hom
+        homset = Hom(self, codomain)
+        return homset(matrix_rep, bases=bases, name=name, 
+                      latex_name=latex_name)
+
+    def endomorphism_map(self, matrix_rep, basis=None, name=None, 
+                         latex_name=None):
+        r"""
+        Endomorphism of ``self`` as an instance of 
+        :class:`~sage.categories.map.Map`. 
+            
+        Define a module endomorphism `\phi: M \rightarrow M`, where `M` is 
+        ``self``.  
+
+        .. NOTE::
+        
+            This method differs from :meth:`endomorphism` is that it returns
+            an instance of Sage's :class:`~sage.categories.map.Map` (actually
+            an instance of the subclass 
+            :class:`~sage.tensor.modules.free_module_morphism.FiniteRankFreeModuleMorphism`), 
+            while :meth:`endomorphism`
+            returns a tensor of type (1,1). Note that there are coercions
+            between these two types.  
+            
+        INPUT:
+        
+        - ``matrix_rep`` -- matrix of size rank(M)*rank(M) representing the 
+          endomorphism with respect to ``basis``; 
+          this entry can actually be any material from which a matrix of 
+          elements of ``self`` base ring can be constructed; the *columns* of
+          ``matrix_rep`` must be the components w.r.t. ``basis`` of 
+          the images of the elements of ``basis``.
+        - ``basis`` -- (default: None) basis of ``self`` defining the 
+          matrix representation; if None the default basis of ``self`` is 
+          assumed. 
+        - ``name`` -- (string; default: None) name given to the endomorphism
+        - ``latex_name`` -- (string; default: None) LaTeX symbol to denote the 
+          endomorphism; if None, ``name`` will be used. 
+        
+        OUTPUT:
+        
+        - the endomorphism `\phi: M \rightarrow M` corresponding to the given
+          specifications, as an instance of 
+          :class:`~sage.tensor.modules.free_module_morphism.FiniteRankFreeModuleMorphism`
+          
+        EXAMPLES:
+        
+        Construction of an endomorphism with minimal data (module's default
+        basis and no name)::
+        
+            sage: M = FiniteRankFreeModule(ZZ, 2, name='M')
+            sage: e = M.basis('e')
+            sage: phi = M.endomorphism_map([[1,-2], [-3,4]]) ; phi
+            Generic endomorphism of rank-2 free module M over the Integer Ring
+            sage: phi.matrix()  # matrix w.r.t the default basis
+            [ 1 -2]
+            [-3  4]
+
+        Construction with full list of arguments (matrix given a basis
+        different from the default one)::
+        
+            sage: a = M.automorphism() ; a[0,1], a[1,0] = 1, -1
+            sage: ep = e.new_basis(a, 'ep', latex_symbol="e'")
+            sage: phi = M.endomorphism_map([[1,-2], [-3,4]], basis=ep, name='phi', latex_name=r'\phi')
+            sage: phi
+            Generic endomorphism of rank-2 free module M over the Integer Ring
+            sage: phi.matrix(ep)  # the input matrix
+            [ 1 -2]
+            [-3  4]
+            sage: phi.matrix()  # matrix w.r.t the default basis
+            [4 3]
+            [2 1]
+
+        """
+        from sage.categories.homset import End
+        if basis is None:
+            basis = self.default_basis()
+        return End(self)(matrix_rep, bases=(basis,basis), name=name, 
+                         latex_name=latex_name)
+
+    def identity_morphism(self, name='Id', latex_name=None):
+        r"""
+        Return the identity endomorphism of ``self``.
+    
+        INPUT:
+        
+        - ``name`` -- (string; default: 'Id') name given to the identiy 
+          morphism
+        - ``latex_name`` -- (string; default: None) LaTeX symbol to denote the 
+          identity morphism; if None and ``name`` is 'Id', it is set to 
+          '\\mathrm{Id}'
+        
+        OUTPUT:
+        
+        - the identity map of ``self`` as an instance of 
+          :class:`~sage.tensor.modules.free_module_morphism.FreeModuleIdentityMorphism`
+
+        EXAMPLES:
+        
+        Identity endomorphism of a rank-3 `\ZZ`-module::
+
+            sage: M = FiniteRankFreeModule(ZZ, 3, name='M')
+            sage: e = M.basis('e')
+            sage: Id = M.identity_morphism() ; Id
+            Identity endomorphism of rank-3 free module M over the Integer Ring
+            sage: latex(Id)
+            \mathrm{Id}
+
+        """ 
+        from sage.categories.homset import End
+        from sage.tensor.modules.free_module_morphism import FreeModuleIdentityMorphism
+        if self._identity_morphism is None:
+            self._identity_morphism = FreeModuleIdentityMorphism(End(self))
+        return self._identity_morphism
+
+        
