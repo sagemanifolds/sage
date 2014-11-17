@@ -24,6 +24,9 @@ AUTHORS:
 
 from sage.structure.sage_object import SageObject
 from domain import Domain
+from sage.parallel.all import parallel
+from sage.geometry.all import manifoldPara
+import time
 
 class AffConnection(SageObject):
     r"""
@@ -996,25 +999,112 @@ class AffConnection(SageObject):
                         break
                 else:
                     # frame in not a subframe and the computation is performed:
+                    marco_t0 = time.time()
                     sc = frame.structure_coef()
                     gam_gam = gam.contract(1, gam, 0)
                     gam_sc = gam.contract(2, sc, 0)
                     res = resu.add_comp(frame)
-                    for i in manif.irange():
-                        for j in manif.irange():
-                            for k in manif.irange():
-                                # antisymmetry of the Riemann tensor taken into 
-                                # account by l>k: 
-                                for l in manif.irange(start=k+1):
-                                    res[i,j,k,l] = frame[k](gam[[i,j,l]]) - \
-                                                   frame[l](gam[[i,j,k]]) + \
-                                                   gam_gam[[i,k,j,l]] -  \
-                                                   gam_gam[[i,l,j,k]] -  \
-                                                   gam_sc[[i,j,k,l]]
+                    print 'init riemann ',time.time()-marco_t0
+
+                    if manifoldPara.use_paral :
+                        # parllel computation
+                        marco_t0 = time.time()
+
+                        nproc = manifoldPara.nproc
+                        lol = lambda lst, sz: [lst[i:i+sz] for i in range(0, len(lst), sz)]
+
+                        ind_list = []
+                        for i in manif.irange():
+                            for j in manif.irange():
+                                ind_list.append((i,j))
+                        ind_len = len(ind_list)
+                        ind_step = max(1,int(ind_len/nproc))
+                        local_list = lol(ind_list,ind_step)
+                        
+                        # definition of the list of input parameters
+                        listParalInput = [] 
+                        for ind_part in local_list:
+                            listParalInput.append((frame,gam,gam_gam,gam_sc,manif.irange,ind_part,time))
+                        # definition of the parallel function
+                        @parallel(p_iter='multiprocessing',ncpus=nproc)
+                        def make_Reim(frame,gam,gam_gam,gam_sc,indices,local_list_ij,time):
+                            marco_t0 = time.time()
+                            partial = []
+                            for i,j in local_list_ij:
+                                for k in indices():
+                                    for l in indices(start=k+1):
+                                        partial.append([i,j,k,l,
+                                                frame[k](gam[[i,j,l]]) - \
+                                                frame[l](gam[[i,j,k]]) + \
+                                                gam_gam[[i,k,j,l]] -  \
+                                                gam_gam[[i,l,j,k]] -  \
+                                                gam_sc[[i,j,k,l]]]
+                                            )
+                            print "partial time",time.time()-marco_t0
+                            return partial
+
+
+                        # Computation and Assignation of values
+                        for ii,val in list(make_Reim(listParalInput)):
+                            for jj in val:
+                                res[jj[0],jj[1],jj[2],jj[3]] = jj[4]
+
+                        print 'paral riemann comp',time.time()-marco_t0
+
+                        # # parllel computation
+                        # marco_t0 = time.time()
+
+                        # # definition of the list of input parameters
+                        # listParalInput = [] 
+                        # for i in manif.irange():
+                        #     for j in manif.irange():
+                        #         listParalInput.append((frame,gam,gam_gam,gam_sc,manif.irange,i,j))
+
+                        # # definition of the parallel function
+                        # @parallel(p_iter='multiprocessing',ncpus=manifoldPara.nproc)
+                        # def make_Reim(frame,gam,gam_gam,gam_sc,indices,i,j):
+                        #     partial = []
+                        #     for k in indices():
+                        #         for l in indices(start=k+1):
+                        #             partial.append([i,j,k,l,
+                        #                     frame[k](gam[[i,j,l]]) - \
+                        #                     frame[l](gam[[i,j,k]]) + \
+                        #                     gam_gam[[i,k,j,l]] -  \
+                        #                     gam_gam[[i,l,j,k]] -  \
+                        #                     gam_sc[[i,j,k,l]]]
+                        #                 )
+                        #     return partial
+
+
+                        # # Computation and Assignation of values
+                        # for ii,val in list(make_Reim(listParalInput)):
+                        #     for jj in val:
+                        #         res[jj[0],jj[1],jj[2],jj[3]] = jj[4]
+
+                        # print 'paral riemann comp',time.time()-marco_t0
+                        
+                    else:
+                        # sequential 
+                        marco_t0 = time.time()                                        
+                        for i in manif.irange():
+                            for j in manif.irange():
+                                for k in manif.irange():
+                                    # antisymmetry of the Riemann tensor taken into 
+                                    # account by l>k: 
+                                    for l in manif.irange(start=k+1):
+                                        res[i,j,k,l] = frame[k](gam[[i,j,l]]) - \
+                                                       frame[l](gam[[i,j,k]]) + \
+                                                       gam_gam[[i,k,j,l]] -  \
+                                                       gam_gam[[i,l,j,k]] -  \
+                                                       gam_sc[[i,j,k,l]]
+
+                        print 'std riemann comp',time.time()-marco_t0
+
+                
             self._riemann = resu
+            
         return self._riemann 
         
-
     def ricci(self):
         r""" 
         Return the connection's Ricci tensor.
@@ -1509,6 +1599,7 @@ class LeviCivitaConnection(AffConnection):
     def __init__(self, metric, name, latex_name=None, init_coef=True):
         AffConnection.__init__(self, metric._domain, name, latex_name)
         self._metric = metric
+        print "MMARCO : connection"
         # Initialization of the derived quantities:
         LeviCivitaConnection._init_derived(self)
         if init_coef:
@@ -1717,17 +1808,105 @@ class LeviCivitaConnection(AffConnection):
                     gam = self._new_coef(frame)
                     gg = self._metric.comp(frame)
                     ginv = self._metric.inverse().comp(frame)
-                    for ind in gam.non_redundant_index_generator():
-                        i, j, k = ind
-                        # The computation is performed at the FunctionChart level:
-                        rsum = 0
-                        for s in manif.irange():
-                            rsum += ginv[i,s, chart] * ( 
-                                                gg[s,k, chart].diff(j)
-                                              + gg[j,s, chart].diff(k)
-                                              - gg[j,k, chart].diff(s) )
-                        gam[i,j,k, chart] = rsum / 2
-                        self._coefficients[frame] = gam
+
+                    if manifoldPara.use_paral :
+                        # parallel computation
+                        marco_t0 = time.time()
+
+                        nproc = manifoldPara.nproc #* 2
+                        lol = lambda lst, sz: [lst[i:i+sz] for i in range(0, len(lst), sz)]
+
+                        ind_list = []
+                        for ind in gam.non_redundant_index_generator():
+                            i, j, k = ind
+                            ind_list.append((i,j,k))
+                        ind_len = len(ind_list)
+                        ind_step = max(1,int(ind_len/nproc))
+                        local_list = lol(ind_list,ind_step)
+                        print "connection local_list",len(local_list),local_list
+
+                        # definition of the list of input parameters
+                        listParalInput = [] 
+                        for ind_part in local_list:
+                            listParalInput.append((ind_part,chart,ginv,gg,manif,time))
+
+                        # definition of the parallel function
+                        @parallel(p_iter='multiprocessing',ncpus=manifoldPara.nproc)
+                        def make_Connect(local_list_ijk,chart,ginv,gg,manif,time):
+                            marco_t0 = time.time()
+                            #print "local_list_ijk",local_list_ijk
+
+                            partial = []
+                            for i,j,k in local_list_ijk:
+                                rsum = 0
+                                for s in manif.irange():
+                                    if ginv[i,s, chart]!=0:
+                                        rsum += ginv[i,s, chart] * ( 
+                                                        gg[s,k, chart].diff(j)
+                                                      + gg[j,s, chart].diff(k)
+                                                      - gg[j,k, chart].diff(s) )
+                                partial.append([i,j,k,rsum / 2])
+                            print "partial time",time.time()-marco_t0
+                            return partial
+                                
+                        # Computation and Assignation of values
+                        marco_t1 = time.time()
+                        a = list(make_Connect(listParalInput))
+                        print "time connection comp",time.time()-marco_t1
+                        marco_t2 = time.time()
+                        for ii, val in a:
+                            for jj in val:
+                                gam[jj[0],jj[1],jj[2],ii[0][1]] = jj[3]
+                        print "time connection comp",time.time()-marco_t2
+
+                        print "time connection par",time.time()-marco_t0
+
+
+                        # # parallel computation
+                        # marco_t0 = time.time()
+
+                        # # definition of the list of input parameters
+                        # listParalInput = []
+                        # for ind in gam.non_redundant_index_generator():
+                        #     i, j, k = ind
+                        #     listParalInput.append((i,j,k,chart,ginv,gg,manif))
+                        
+                        # # definition of the parallel function
+                        # @parallel(p_iter='multiprocessing',ncpus=manifoldPara.nproc)
+                        # def make_Connect(i,j,k,chart,ginv,gg,manif):
+                        #     rsum = 0
+                        #     for s in manif.irange():
+                        #         if ginv[i,s, chart]!=0:
+                        #             rsum += ginv[i,s, chart] * ( 
+                        #                             gg[s,k, chart].diff(j)
+                        #                           + gg[j,s, chart].diff(k)
+                        #                           - gg[j,k, chart].diff(s) )
+                        #     return rsum / 2
+
+                        # # Computation and Assignation of values
+                        # for ii, val in list(make_Connect(listParalInput)):
+                        #     gam[ii[0][0],ii[0][1],ii[0][2],ii[0][3]] = val
+
+                        # print "time connection par",time.time()-marco_t0
+
+                    else:
+                        # sequential 
+                        marco_t0 = time.time()
+                        for ind in gam.non_redundant_index_generator():
+                            i, j, k = ind
+                            # The computation is performed at the FunctionChart level:
+                            rsum = 0
+                            for s in manif.irange():
+                                rsum += ginv[i,s, chart] * ( 
+                                                    gg[s,k, chart].diff(j)
+                                                  + gg[j,s, chart].diff(k)
+                                                  - gg[j,k, chart].diff(s) )
+                            gam[i,j,k, chart] = rsum / 2
+                        print "time connection seq",time.time()-marco_t0
+                            
+                    # Assignation of results        
+                    self._coefficients[frame] = gam
+
                 else:
                     # Computation from the formula defining the connection coef.
                     return AffConnection.coef(self, frame)

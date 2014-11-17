@@ -21,6 +21,7 @@ AUTHORS:
 #                  http://www.gnu.org/licenses/
 #******************************************************************************
 
+from sage.parallel.ncpus import ncpus
 from sage.structure.sage_object import SageObject
 
 def is_atomic(expression):
@@ -463,3 +464,21 @@ def set_axes_labels(graph, xlabel, ylabel, zlabel, **kwds):
     return graph
 
     
+
+class ManifoldParallelism():
+    r"""
+    Class governing SageManifolds Parallelism.
+
+    It contains the number of processor (nproc) and if use the
+    parallelism (use_paral).
+    Default is nproc=1 and use_paral=False
+    
+    """
+    def __init__(self,nproc=1):
+        self.nproc = nproc
+        self.use_paral = True if self.nproc!=1 else False
+    def set(self,nproc=None):
+        self.nproc = ncpus() if nproc is None else nproc
+        self.use_paral = True if self.nproc!=1 else False
+    def __str__(self):
+        return "Number of cpu used = "+str(self.nproc)

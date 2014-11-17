@@ -236,9 +236,13 @@ EXAMPLES:
 #  the License, or (at your option) any later version.
 #                  http://www.gnu.org/licenses/
 #******************************************************************************
-
 from sage.structure.sage_object import SageObject
 from sage.rings.integer import Integer
+from sage.parallel.all import parallel
+from sage.geometry.all import manifoldPara
+from operator import itemgetter
+
+import time
 
 class Components(SageObject):
     r"""
@@ -1292,9 +1296,49 @@ class Components(SageObject):
         if other._sindex != self._sindex:
             raise TypeError("The two sets of components do not have the " + 
                             "same starting index.")
-        result = self.copy()
-        for ind, val in other._comp.iteritems():
-            result[[ind]] += val
+
+        if manifoldPara.use_paral :
+            # parallel sum
+            marco_t0 = time.time() 
+            result_para = self._new_instance()
+
+            @parallel(p_iter='multiprocessing',ncpus=manifoldPara.nproc)
+            def paral_sum(a,b,ind):
+                return a + b
+
+            partial = list(paral_sum([(self[[ind]],val,ind)
+                            for ind, val in other._comp.iteritems()
+                        ]))
+            for ii,val in partial:
+                result[[ii[0][2]]] = val
+            print 'time sum par',time.time()-marco_t0
+
+            # parallel MMARCO 2
+            # marco_t0 = time.time() 
+            # result_para = self._new_instance()
+
+            # @parallel(p_iter='multiprocessing',ncpus=manifoldPara.nproc)
+            # def paral_sum(ind,a,b):
+            #     return  a[[ind]] + b[[ind]]
+
+            # result_list = list(paral_sum([(ind,self,other) for ind in other._comp ]))
+            # for ii,val in result_list:
+            #     result[[ii[0][0]]] = val
+            # print 'timing para ',time.time()-marco_t0
+
+            # return result_para
+
+        else:
+            # sequential
+            marco_t0 = time.time() 
+            result = self.copy()
+            time.time() 
+
+            for ind, val in other._comp.iteritems():
+                result[[ind]] += val
+                #print ind,result[[ind]].view()
+            print 'time seq ',time.time()-marco_t0
+
         return result
 
     def __radd__(self, other):
@@ -1680,6 +1724,7 @@ class Components(SageObject):
             True
 
         """
+        marco_t0 = time.time()
         #
         # Treatment of the input
         #
@@ -1715,15 +1760,64 @@ class Components(SageObject):
         # Special case of a scalar result
         #
         if res_nid == 0:
+            print "MMARCO : CONTRACTION SCALAR"
             # To generate the indices tuples (of size ncontr) involved in the 
             # the contraction, we create an empty instance of Components with
             # ncontr indices and call the method index_generator() on it:
             comp_for_contr = Components(self._ring, self._frame, ncontr, 
                                         start_index=self._sindex) 
             res = 0
-            for ind in comp_for_contr.index_generator():
-                res += self[[ind]] * other[[ind]]
+
+            if manifoldPara.use_paral:
+                # parallel contraction to scalar                
+                marco_t0 = time.time()
+
+                # parallel multiplication
+                @parallel(p_iter='multiprocessing',ncpus=manifoldPara.nproc)
+                def compprod(a,b):
+                    return a*b
+                
+                # parallel list of inputs
+                partial = list(compprod([(other[[ind]],self[[ind]]) for ind in
+                                     comp_for_contr.index_generator()
+                    ]))
+                res = sum(map(itemgetter(1),partial))
+                print 'time contraction scalar par',time.time()-marco_t0
+            
+                # # multiprocessing for sum
+                # res = 0
+                # marco_t0 = time.time()
+                # @parallel(p_iter='multiprocessing',ncpus=manifoldPara.nproc)
+                # def partialsum(a,b,n1,n2):
+                #     partial = 0
+                #     for ind in range(n1,n2):
+                #         partial += a[[ind]]*b[[ind]]
+                #     return partial
+
+                # rank = self._dim
+                # part = rank/(manifoldPara.nproc)
+                # rest = rank%(manifoldPara.nproc)
+                # print rank,part,rest
+                # #listain = [(ii,ii+part) for ii in range(self._sindex,self._sindex+rank,part)]
+                # #print listain,part,rest
+
+                # listain = [(self,other,ii,ii+part) for ii in range(self._sindex,self._sindex+rank,part)]
+
+                # res = sum(map(itemgetter(1),partialsum(listain)))
+                # print 'time parallel sum',time.time()-marco_t0
+                # print "MMARCO: res.view()"
+
+            else:
+                # sequential
+                res = 0
+                marco_t0 = time.time()
+                for ind in comp_for_contr.index_generator():
+                    res += self[[ind]] * other[[ind]]
+                print 'time old',time.time()-marco_t0
+
             return res
+    
+        
         #
         # Positions of self and other indices in the result
         #  (None = the position is involved in a contraction and therefore 
@@ -1835,23 +1929,75 @@ class Components(SageObject):
         comp_for_contr = Components(self._ring, self._frame, ncontr, 
                                     start_index=self._sindex) 
         shift_o = self._nid - ncontr
-        for ind in res.non_redundant_index_generator():
-            ind_s = [None for i in range(self._nid)]  # initialization
-            ind_o = [None for i in range(other._nid)] # initialization
-            for i, pos in enumerate(rev_s):
-                ind_s[pos] = ind[i]
-            for i, pos in enumerate(rev_o):
-                ind_o[pos] = ind[shift_o+i]
-            sm = 0
-            for ind_c in comp_for_contr.index_generator():
-                ic = 0
-                for pos_s, pos_o in contractions:
-                    k = ind_c[ic]
-                    ind_s[pos_s] = k
-                    ind_o[pos_o] = k
-                    ic += 1
-                sm += self[[ind_s]] * other[[ind_o]]
-            res[[ind]] = sm
+
+        print "MMARCO : CONTRACTION TENSORIAL"
+
+        if manifoldPara.use_paral:
+            # parallel computation
+            marco_t0 = time.time()
+
+            nproc = manifoldPara.nproc
+            lol = lambda lst, sz: [lst[i:i+sz] for i in range(0, len(lst), sz)]
+            ind_list = [ind for ind in res.non_redundant_index_generator()]
+            ind_len = len(ind_list)
+            ind_step = max(1,int(ind_len/nproc))
+            local_list = lol(ind_list,ind_step)
+
+            listParalInput = []
+            for ind_part in local_list:
+                listParalInput.append((self,other,ind_part,rev_s,rev_o,shift_o,contractions,comp_for_contr))
+
+            # definition of the parallel function
+            @parallel(p_iter='multiprocessing',ncpus=nproc)
+            def make_Contraction(this,other,local_list,rev_s,rev_o,shift_o,contractions,comp_for_contr):
+                local_res = []
+                for ind in local_list:
+                    ind_s = [None for i in range(this._nid)]  # initialization
+                    ind_o = [None for i in range(other._nid)] # initialization
+                    for i, pos in enumerate(rev_s):
+                        ind_s[pos] = ind[i]
+                    for i, pos in enumerate(rev_o):
+                        ind_o[pos] = ind[shift_o+i]
+                    sm = 0
+                    for ind_c in comp_for_contr.index_generator():
+                        ic = 0
+                        for pos_s, pos_o in contractions:
+                            k = ind_c[ic]
+                            ind_s[pos_s] = k
+                            ind_o[pos_o] = k
+                            ic += 1
+                        sm += this[[ind_s]] * other[[ind_o]]
+                    local_res.append([ind,sm])
+                return local_res
+
+            for ii, val in list(make_Contraction(listParalInput)):
+                for jj in val :
+                      res[[jj[0]]] = jj[1]
+            print "time contraction par: ",time.time()-marco_t0
+
+        else:
+            # sequential
+            marco_t0 = time.time()                 
+            for ind in res.non_redundant_index_generator():
+                ind_s = [None for i in range(self._nid)]  # initialization
+                ind_o = [None for i in range(other._nid)] # initialization
+                for i, pos in enumerate(rev_s):
+                    ind_s[pos] = ind[i]
+                for i, pos in enumerate(rev_o):
+                    ind_o[pos] = ind[shift_o+i]
+
+                sm = 0
+                for ind_c in comp_for_contr.index_generator():
+                    ic = 0
+                    for pos_s, pos_o in contractions:
+                        k = ind_c[ic]
+                        ind_s[pos_s] = k
+                        ind_o[pos_o] = k
+                        ic += 1
+                    sm += self[[ind_s]] * other[[ind_o]]
+                res[[ind]] = sm
+
+            print "time contraction seq: ",time.time()-marco_t0            
         return res
         
 
