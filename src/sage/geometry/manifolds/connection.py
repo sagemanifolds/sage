@@ -763,23 +763,75 @@ class AffConnection(SageObject):
                               sym=tensor._sym, antisym=tensor._antisym)
         n_con = tensor._tensor_type[0]
         n_cov = tensor._tensor_type[1]
-        for ind in resc.non_redundant_index_generator():
-            p = ind[-1]  # derivation index
-            ind0 = ind[:-1]
-            rsum = frame[p](tc[[ind0]])
-            # loop on contravariant indices:
-            for k in range(n_con): 
-                for i in manif.irange():
-                    indk = list(ind0)
-                    indk[k] = i  
-                    rsum += gam[[ind0[k], i, p]] * tc[[indk]]
-            # loop on covariant indices:
-            for k in range(n_con, tensor._tensor_rank): 
-                for i in manif.irange():
-                    indk = list(ind0)
-                    indk[k] = i  
-                    rsum -= gam[[i, ind0[k], p]] * tc[[indk]]
-            resc[[ind]] = rsum
+
+        print "MMARCO : covariant derivative"
+        marco_t0 = time.time()
+        if manifoldPara.use_paral :
+            # parllel computation
+
+            nproc = manifoldPara.nproc 
+            lol = lambda lst, sz: [lst[i:i+sz] for i in range(0, len(lst), sz)]
+
+            ind_list = list(resc.non_redundant_index_generator())
+            ind_step = max(1,int(len(ind_list)/nproc))
+            local_list = lol(ind_list,ind_step)
+
+            # definition of the list of input parameters
+            listParalInput = [] 
+            for ind_part in local_list:
+                listParalInput.append((ind_part,tc,gam,frame,n_con,tensor,manif))
+
+            # definition of the parallel function
+            @parallel(p_iter='multiprocessing',ncpus=manifoldPara.nproc)
+            def make_CovDerivative(ind_part,tc,gam,frame,n_con,tensor,manif):
+                partial = []
+                for ind in ind_part:
+                    p = ind[-1]  # derivation index
+                    ind0 = ind[:-1]
+                    rsum = frame[p](tc[[ind0]])
+                    # loop on contravariant indices:
+                    for k in range(n_con): 
+                        for i in manif.irange():
+                            indk = list(ind0)
+                            indk[k] = i  
+                            rsum += gam[[ind0[k], i, p]] * tc[[indk]]
+                    # loop on covariant indices:
+                    for k in range(n_con, tensor._tensor_rank): 
+                        for i in manif.irange():
+                            indk = list(ind0)
+                            indk[k] = i  
+                            rsum -= gam[[i, ind0[k], p]] * tc[[indk]]
+                    partial.append([ind,rsum])
+                return partial
+
+            # Computation and Assignation of values
+            for ii,val in make_CovDerivative(listParalInput):
+                for jj in val:
+                    resc[[jj[0]]] = jj[1]
+
+        else:
+            # sequential 
+            for ind in resc.non_redundant_index_generator():
+                p = ind[-1]  # derivation index
+                ind0 = ind[:-1]
+                rsum = frame[p](tc[[ind0]])
+                # loop on contravariant indices:
+                for k in range(n_con): 
+                    for i in manif.irange():
+                        indk = list(ind0)
+                        indk[k] = i  
+                        rsum += gam[[ind0[k], i, p]] * tc[[indk]]
+                # loop on covariant indices:
+                for k in range(n_con, tensor._tensor_rank): 
+                    for i in manif.irange():
+                        indk = list(ind0)
+                        indk[k] = i  
+                        rsum -= gam[[i, ind0[k], p]] * tc[[indk]]
+                resc[[ind]] = rsum
+
+        print "time cov derivative:",time.time()-marco_t0
+                
+
         # Resulting tensor field
         return tdom.vector_field_module().tensor_from_comp((n_con, n_cov+1),
                         resc, 
@@ -1004,12 +1056,11 @@ class AffConnection(SageObject):
                     gam_gam = gam.contract(1, gam, 0)
                     gam_sc = gam.contract(2, sc, 0)
                     res = resu.add_comp(frame)
-                    print 'init riemann ',time.time()-marco_t0
+                    print 'time riemann init:',time.time()-marco_t0
 
+                    marco_t0 = time.time()
                     if manifoldPara.use_paral :
                         # parllel computation
-                        marco_t0 = time.time()
-
                         nproc = manifoldPara.nproc
                         lol = lambda lst, sz: [lst[i:i+sz] for i in range(0, len(lst), sz)]
 
@@ -1017,18 +1068,17 @@ class AffConnection(SageObject):
                         for i in manif.irange():
                             for j in manif.irange():
                                 ind_list.append((i,j))
-                        ind_len = len(ind_list)
-                        ind_step = max(1,int(ind_len/nproc))
+                        ind_step = max(1,int(len(ind_list)/nproc))
                         local_list = lol(ind_list,ind_step)
-                        
+
                         # definition of the list of input parameters
                         listParalInput = [] 
                         for ind_part in local_list:
-                            listParalInput.append((frame,gam,gam_gam,gam_sc,manif.irange,ind_part,time))
+                            listParalInput.append((frame,gam,gam_gam,gam_sc,manif.irange,ind_part))
+
                         # definition of the parallel function
                         @parallel(p_iter='multiprocessing',ncpus=nproc)
-                        def make_Reim(frame,gam,gam_gam,gam_sc,indices,local_list_ij,time):
-                            marco_t0 = time.time()
+                        def make_Reim(frame,gam,gam_gam,gam_sc,indices,local_list_ij):
                             partial = []
                             for i,j in local_list_ij:
                                 for k in indices():
@@ -1040,20 +1090,15 @@ class AffConnection(SageObject):
                                                 gam_gam[[i,l,j,k]] -  \
                                                 gam_sc[[i,j,k,l]]]
                                             )
-                            print "partial time",time.time()-marco_t0
                             return partial
 
 
                         # Computation and Assignation of values
-                        for ii,val in list(make_Reim(listParalInput)):
+                        for ii,val in make_Reim(listParalInput):
                             for jj in val:
                                 res[jj[0],jj[1],jj[2],jj[3]] = jj[4]
 
-                        print 'paral riemann comp',time.time()-marco_t0
-
                         # # parllel computation
-                        # marco_t0 = time.time()
-
                         # # definition of the list of input parameters
                         # listParalInput = [] 
                         # for i in manif.irange():
@@ -1080,12 +1125,9 @@ class AffConnection(SageObject):
                         # for ii,val in list(make_Reim(listParalInput)):
                         #     for jj in val:
                         #         res[jj[0],jj[1],jj[2],jj[3]] = jj[4]
-
-                        # print 'paral riemann comp',time.time()-marco_t0
                         
                     else:
                         # sequential 
-                        marco_t0 = time.time()                                        
                         for i in manif.irange():
                             for j in manif.irange():
                                 for k in manif.irange():
@@ -1097,11 +1139,9 @@ class AffConnection(SageObject):
                                                        gam_gam[[i,k,j,l]] -  \
                                                        gam_gam[[i,l,j,k]] -  \
                                                        gam_sc[[i,j,k,l]]
-
-                        print 'std riemann comp',time.time()-marco_t0
-
-                
+                    print 'time riemann :',time.time()-marco_t0
             self._riemann = resu
+            
             
         return self._riemann 
         
@@ -1809,9 +1849,10 @@ class LeviCivitaConnection(AffConnection):
                     gg = self._metric.comp(frame)
                     ginv = self._metric.inverse().comp(frame)
 
+                    marco_t0 = time.time()
+                    
                     if manifoldPara.use_paral :
                         # parallel computation
-                        marco_t0 = time.time()
 
                         nproc = manifoldPara.nproc #* 2
                         lol = lambda lst, sz: [lst[i:i+sz] for i in range(0, len(lst), sz)]
@@ -1820,22 +1861,17 @@ class LeviCivitaConnection(AffConnection):
                         for ind in gam.non_redundant_index_generator():
                             i, j, k = ind
                             ind_list.append((i,j,k))
-                        ind_len = len(ind_list)
-                        ind_step = max(1,int(ind_len/nproc))
+                        ind_step = max(1,int(len(ind_list)/nproc))
                         local_list = lol(ind_list,ind_step)
-                        print "connection local_list",len(local_list),local_list
 
                         # definition of the list of input parameters
                         listParalInput = [] 
                         for ind_part in local_list:
-                            listParalInput.append((ind_part,chart,ginv,gg,manif,time))
+                            listParalInput.append((ind_part,chart,ginv,gg,manif))
 
                         # definition of the parallel function
                         @parallel(p_iter='multiprocessing',ncpus=manifoldPara.nproc)
-                        def make_Connect(local_list_ijk,chart,ginv,gg,manif,time):
-                            marco_t0 = time.time()
-                            #print "local_list_ijk",local_list_ijk
-
+                        def make_Connect(local_list_ijk,chart,ginv,gg,manif):
                             partial = []
                             for i,j,k in local_list_ijk:
                                 rsum = 0
@@ -1846,25 +1882,15 @@ class LeviCivitaConnection(AffConnection):
                                                       + gg[j,s, chart].diff(k)
                                                       - gg[j,k, chart].diff(s) )
                                 partial.append([i,j,k,rsum / 2])
-                            print "partial time",time.time()-marco_t0
                             return partial
                                 
                         # Computation and Assignation of values
-                        marco_t1 = time.time()
-                        a = list(make_Connect(listParalInput))
-                        print "time connection comp",time.time()-marco_t1
-                        marco_t2 = time.time()
-                        for ii, val in a:
+                        for ii, val in make_Connect(listParalInput):
                             for jj in val:
                                 gam[jj[0],jj[1],jj[2],ii[0][1]] = jj[3]
-                        print "time connection comp",time.time()-marco_t2
-
-                        print "time connection par",time.time()-marco_t0
 
 
                         # # parallel computation
-                        # marco_t0 = time.time()
-
                         # # definition of the list of input parameters
                         # listParalInput = []
                         # for ind in gam.non_redundant_index_generator():
@@ -1887,11 +1913,8 @@ class LeviCivitaConnection(AffConnection):
                         # for ii, val in list(make_Connect(listParalInput)):
                         #     gam[ii[0][0],ii[0][1],ii[0][2],ii[0][3]] = val
 
-                        # print "time connection par",time.time()-marco_t0
-
                     else:
                         # sequential 
-                        marco_t0 = time.time()
                         for ind in gam.non_redundant_index_generator():
                             i, j, k = ind
                             # The computation is performed at the FunctionChart level:
@@ -1902,11 +1925,11 @@ class LeviCivitaConnection(AffConnection):
                                                   + gg[j,s, chart].diff(k)
                                                   - gg[j,k, chart].diff(s) )
                             gam[i,j,k, chart] = rsum / 2
-                        print "time connection seq",time.time()-marco_t0
                             
                     # Assignation of results        
                     self._coefficients[frame] = gam
-
+                    print "time connection :",time.time()-marco_t0
+                    
                 else:
                     # Computation from the formula defining the connection coef.
                     return AffConnection.coef(self, frame)

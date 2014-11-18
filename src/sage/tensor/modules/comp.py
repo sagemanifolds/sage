@@ -1306,10 +1306,7 @@ class Components(SageObject):
             def paral_sum(a,b,ind):
                 return a + b
 
-            partial = list(paral_sum([(self[[ind]],val,ind)
-                            for ind, val in other._comp.iteritems()
-                        ]))
-            for ii,val in partial:
+            for ii,val in paral_sum([(self[[ind]],val,ind) for ind, val in other._comp.iteritems()]):
                 result[[ii[0][2]]] = val
             print 'time sum par',time.time()-marco_t0
 
@@ -1939,8 +1936,7 @@ class Components(SageObject):
             nproc = manifoldPara.nproc
             lol = lambda lst, sz: [lst[i:i+sz] for i in range(0, len(lst), sz)]
             ind_list = [ind for ind in res.non_redundant_index_generator()]
-            ind_len = len(ind_list)
-            ind_step = max(1,int(ind_len/nproc))
+            ind_step = max(1,int(len(ind_list)/nproc))
             local_list = lol(ind_list,ind_step)
 
             listParalInput = []
@@ -1970,7 +1966,7 @@ class Components(SageObject):
                     local_res.append([ind,sm])
                 return local_res
 
-            for ii, val in list(make_Contraction(listParalInput)):
+            for ii, val in make_Contraction(listParalInput):
                 for jj in val :
                       res[[jj[0]]] = jj[1]
             print "time contraction par: ",time.time()-marco_t0
