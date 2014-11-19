@@ -773,7 +773,7 @@ class AffConnection(SageObject):
             lol = lambda lst, sz: [lst[i:i+sz] for i in range(0, len(lst), sz)]
 
             ind_list = list(resc.non_redundant_index_generator())
-            ind_step = max(1,int(len(ind_list)/nproc))
+            ind_step = max(1,int(len(ind_list)/nproc/2))
             local_list = lol(ind_list,ind_step)
 
             # definition of the list of input parameters
@@ -1068,7 +1068,7 @@ class AffConnection(SageObject):
                         for i in manif.irange():
                             for j in manif.irange():
                                 ind_list.append((i,j))
-                        ind_step = max(1,int(len(ind_list)/nproc))
+                        ind_step = max(1,int(len(ind_list)/nproc/2))
                         local_list = lol(ind_list,ind_step)
 
                         # definition of the list of input parameters
@@ -1861,7 +1861,7 @@ class LeviCivitaConnection(AffConnection):
                         for ind in gam.non_redundant_index_generator():
                             i, j, k = ind
                             ind_list.append((i,j,k))
-                        ind_step = max(1,int(len(ind_list)/nproc))
+                        ind_step = max(1,int(len(ind_list)/nproc/2))
                         local_list = lol(ind_list,ind_step)
 
                         # definition of the list of input parameters

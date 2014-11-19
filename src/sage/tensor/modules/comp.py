@@ -1297,45 +1297,51 @@ class Components(SageObject):
             raise TypeError("The two sets of components do not have the " + 
                             "same starting index.")
 
+        marco_t0 = time.time() 
         if manifoldPara.use_paral :
             # parallel sum
-            marco_t0 = time.time() 
-            result_para = self._new_instance()
+            result = self._new_instance()
+            nproc = manifoldPara.nproc 
+            lol = lambda lst, sz: [lst[i:i+sz] for i in range(0, len(lst), sz)]
 
+            ind_list = [ ind for ind, ocomp  in other._comp.iteritems()]
+            ind_step = max(1,int(len(ind_list)/nproc/2))
+            local_list = lol(ind_list,ind_step)
+            
+            # definition of the list of input parameters
+            listParalInput = [(self,other,ind_part) for ind_part in local_list]
+                
             @parallel(p_iter='multiprocessing',ncpus=manifoldPara.nproc)
-            def paral_sum(a,b,ind):
-                return a + b
+            def paral_sum(a,b,local_list_ind):
+                partial = []
+                for ind in local_list_ind:
+                    partial.append([ind,a[[ind]]+b[[ind]]])
+                return partial
+            
+            for ii,val in paral_sum(listParalInput):
+                for jj in val:
+                    result[[jj[0]]] = jj[1]
 
-            for ii,val in paral_sum([(self[[ind]],val,ind) for ind, val in other._comp.iteritems()]):
-                result[[ii[0][2]]] = val
-            print 'time sum par',time.time()-marco_t0
-
-            # parallel MMARCO 2
-            # marco_t0 = time.time() 
-            # result_para = self._new_instance()
+            # # parallel sum
+            # result = self._new_instance()
 
             # @parallel(p_iter='multiprocessing',ncpus=manifoldPara.nproc)
-            # def paral_sum(ind,a,b):
-            #     return  a[[ind]] + b[[ind]]
+            # def paral_sum(a,b,ind):
+            #     return a + b
 
-            # result_list = list(paral_sum([(ind,self,other) for ind in other._comp ]))
-            # for ii,val in result_list:
-            #     result[[ii[0][0]]] = val
-            # print 'timing para ',time.time()-marco_t0
-
-            # return result_para
-
+            # for ii,val in paral_sum([(self[[ind]],ocomp,ind) for ind, ocomp in other._comp.iteritems()]):
+            #     result[[ii[0][2]]] = val
+            
+                
         else:
             # sequential
-            marco_t0 = time.time() 
             result = self.copy()
             time.time() 
 
             for ind, val in other._comp.iteritems():
                 result[[ind]] += val
-                #print ind,result[[ind]].view()
-            print 'time seq ',time.time()-marco_t0
 
+        print 'time tensor sum:',time.time()-marco_t0
         return result
 
     def __radd__(self, other):
@@ -1781,29 +1787,6 @@ class Components(SageObject):
                 res = sum(map(itemgetter(1),partial))
                 print 'time contraction scalar par',time.time()-marco_t0
             
-                # # multiprocessing for sum
-                # res = 0
-                # marco_t0 = time.time()
-                # @parallel(p_iter='multiprocessing',ncpus=manifoldPara.nproc)
-                # def partialsum(a,b,n1,n2):
-                #     partial = 0
-                #     for ind in range(n1,n2):
-                #         partial += a[[ind]]*b[[ind]]
-                #     return partial
-
-                # rank = self._dim
-                # part = rank/(manifoldPara.nproc)
-                # rest = rank%(manifoldPara.nproc)
-                # print rank,part,rest
-                # #listain = [(ii,ii+part) for ii in range(self._sindex,self._sindex+rank,part)]
-                # #print listain,part,rest
-
-                # listain = [(self,other,ii,ii+part) for ii in range(self._sindex,self._sindex+rank,part)]
-
-                # res = sum(map(itemgetter(1),partialsum(listain)))
-                # print 'time parallel sum',time.time()-marco_t0
-                # print "MMARCO: res.view()"
-
             else:
                 # sequential
                 res = 0
@@ -1936,7 +1919,7 @@ class Components(SageObject):
             nproc = manifoldPara.nproc
             lol = lambda lst, sz: [lst[i:i+sz] for i in range(0, len(lst), sz)]
             ind_list = [ind for ind in res.non_redundant_index_generator()]
-            ind_step = max(1,int(len(ind_list)/nproc))
+            ind_step = max(1,int(len(ind_list)/nproc/2))
             local_list = lol(ind_list,ind_step)
 
             listParalInput = []
