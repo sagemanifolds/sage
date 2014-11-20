@@ -1092,39 +1092,10 @@ class AffConnection(SageObject):
                                             )
                             return partial
 
-
                         # Computation and Assignation of values
                         for ii,val in make_Reim(listParalInput):
                             for jj in val:
                                 res[jj[0],jj[1],jj[2],jj[3]] = jj[4]
-
-                        # # parllel computation
-                        # # definition of the list of input parameters
-                        # listParalInput = [] 
-                        # for i in manif.irange():
-                        #     for j in manif.irange():
-                        #         listParalInput.append((frame,gam,gam_gam,gam_sc,manif.irange,i,j))
-
-                        # # definition of the parallel function
-                        # @parallel(p_iter='multiprocessing',ncpus=manifoldPara.nproc)
-                        # def make_Reim(frame,gam,gam_gam,gam_sc,indices,i,j):
-                        #     partial = []
-                        #     for k in indices():
-                        #         for l in indices(start=k+1):
-                        #             partial.append([i,j,k,l,
-                        #                     frame[k](gam[[i,j,l]]) - \
-                        #                     frame[l](gam[[i,j,k]]) + \
-                        #                     gam_gam[[i,k,j,l]] -  \
-                        #                     gam_gam[[i,l,j,k]] -  \
-                        #                     gam_sc[[i,j,k,l]]]
-                        #                 )
-                        #     return partial
-
-
-                        # # Computation and Assignation of values
-                        # for ii,val in list(make_Reim(listParalInput)):
-                        #     for jj in val:
-                        #         res[jj[0],jj[1],jj[2],jj[3]] = jj[4]
                         
                     else:
                         # sequential 
@@ -1854,7 +1825,7 @@ class LeviCivitaConnection(AffConnection):
                     if manifoldPara.use_paral :
                         # parallel computation
 
-                        nproc = manifoldPara.nproc #* 2
+                        nproc = manifoldPara.nproc
                         lol = lambda lst, sz: [lst[i:i+sz] for i in range(0, len(lst), sz)]
 
                         ind_list = []
@@ -1888,30 +1859,6 @@ class LeviCivitaConnection(AffConnection):
                         for ii, val in make_Connect(listParalInput):
                             for jj in val:
                                 gam[jj[0],jj[1],jj[2],ii[0][1]] = jj[3]
-
-
-                        # # parallel computation
-                        # # definition of the list of input parameters
-                        # listParalInput = []
-                        # for ind in gam.non_redundant_index_generator():
-                        #     i, j, k = ind
-                        #     listParalInput.append((i,j,k,chart,ginv,gg,manif))
-                        
-                        # # definition of the parallel function
-                        # @parallel(p_iter='multiprocessing',ncpus=manifoldPara.nproc)
-                        # def make_Connect(i,j,k,chart,ginv,gg,manif):
-                        #     rsum = 0
-                        #     for s in manif.irange():
-                        #         if ginv[i,s, chart]!=0:
-                        #             rsum += ginv[i,s, chart] * ( 
-                        #                             gg[s,k, chart].diff(j)
-                        #                           + gg[j,s, chart].diff(k)
-                        #                           - gg[j,k, chart].diff(s) )
-                        #     return rsum / 2
-
-                        # # Computation and Assignation of values
-                        # for ii, val in list(make_Connect(listParalInput)):
-                        #     gam[ii[0][0],ii[0][1],ii[0][2],ii[0][3]] = val
 
                     else:
                         # sequential 

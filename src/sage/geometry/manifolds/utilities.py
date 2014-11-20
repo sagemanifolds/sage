@@ -469,16 +469,32 @@ class ManifoldParallelism():
     r"""
     Class governing SageManifolds Parallelism.
 
-    It contains the number of processor (nproc) and if use the
-    parallelism (use_paral).
+    Contains information about parallelism of SageManifolds:
+    nproc = Number of processors (nproc) to use.
+    use_paral = Flag if parallelism is used.
     Default is nproc=1 and use_paral=False
     
     """
     def __init__(self,nproc=1):
+        r"""
+        Intializes the parallelism. Normally only an instance of this
+        class is created in a global (visible) variable.
+        Default : 1 processor is used, so no parallelism.
+        """
         self.nproc = nproc
         self.use_paral = True if self.nproc!=1 else False
+
+    def __str__(self):
+        r"""
+        String to print the number of cores.
+        """
+        return "Number of cpu used = "+str(self.nproc)
+
     def set(self,nproc=None):
+        r"""
+        Changes the status of the parallelism in SageManifolds.
+        If not argument is given, the number of processors will set
+        to the maximum of cores found.
+        """
         self.nproc = ncpus() if nproc is None else nproc
         self.use_paral = True if self.nproc!=1 else False
-    def __str__(self):
-        return "Number of cpu used = "+str(self.nproc)
