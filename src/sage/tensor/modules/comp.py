@@ -1320,23 +1320,11 @@ class Components(SageObject):
             
             for ii,val in paral_sum(listParalInput):
                 for jj in val:
-                    result[[jj[0]]] = jj[1]
-
-            # # parallel sum
-            # result = self._new_instance()
-
-            # @parallel(p_iter='multiprocessing',ncpus=manifoldPara.nproc)
-            # def paral_sum(a,b,ind):
-            #     return a + b
-
-            # for ii,val in paral_sum([(self[[ind]],ocomp,ind) for ind, ocomp in other._comp.iteritems()]):
-            #     result[[ii[0][2]]] = val
-            
+                    result[[jj[0]]] = jj[1]            
                 
         else:
             # sequential
             result = self.copy()
-            time.time() 
 
             for ind, val in other._comp.iteritems():
                 result[[ind]] += val
@@ -1727,7 +1715,6 @@ class Components(SageObject):
             True
 
         """
-        marco_t0 = time.time()
         #
         # Treatment of the input
         #
@@ -1771,9 +1758,10 @@ class Components(SageObject):
                                         start_index=self._sindex) 
             res = 0
 
+            marco_t0 = time.time()
+
             if manifoldPara.use_paral:
                 # parallel contraction to scalar                
-                marco_t0 = time.time()
 
                 # parallel multiplication
                 @parallel(p_iter='multiprocessing',ncpus=manifoldPara.nproc)
@@ -1785,16 +1773,13 @@ class Components(SageObject):
                                      comp_for_contr.index_generator()
                     ]))
                 res = sum(map(itemgetter(1),partial))
-                print 'time contraction scalar par',time.time()-marco_t0
-            
             else:
                 # sequential
                 res = 0
-                marco_t0 = time.time()
                 for ind in comp_for_contr.index_generator():
                     res += self[[ind]] * other[[ind]]
-                print 'time old',time.time()-marco_t0
 
+            print 'time contraction scalar: ',time.time()-marco_t0
             return res
     
         
@@ -1911,10 +1896,10 @@ class Components(SageObject):
         shift_o = self._nid - ncontr
 
         print "MMARCO : CONTRACTION TENSORIAL"
-
+        marco_t0 = time.time()
+        
         if manifoldPara.use_paral:
             # parallel computation
-            marco_t0 = time.time()
 
             nproc = manifoldPara.nproc
             lol = lambda lst, sz: [lst[i:i+sz] for i in range(0, len(lst), sz)]
@@ -1952,11 +1937,8 @@ class Components(SageObject):
             for ii, val in make_Contraction(listParalInput):
                 for jj in val :
                       res[[jj[0]]] = jj[1]
-            print "time contraction par: ",time.time()-marco_t0
-
         else:
             # sequential
-            marco_t0 = time.time()                 
             for ind in res.non_redundant_index_generator():
                 ind_s = [None for i in range(self._nid)]  # initialization
                 ind_o = [None for i in range(other._nid)] # initialization
@@ -1976,7 +1958,7 @@ class Components(SageObject):
                     sm += self[[ind_s]] * other[[ind_o]]
                 res[[ind]] = sm
 
-            print "time contraction seq: ",time.time()-marco_t0            
+        print "time contraction tensorial: ",time.time()-marco_t0
         return res
         
 
